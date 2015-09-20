@@ -29,9 +29,14 @@ class FiniteStateMachine(object):
 
 		self.angletolerance = 2
 		self.finder.angletolerance = self.angletolerance
+		self.follower.angletolerance = self.angletolerance
 	
 		self.distancetolerance = .1
 		self.finder.distancetolerance = self.distancetolerance
+
+		self.target_distance = .5
+		self.finder.target_distance = self.target_distance
+		self.follower.target_distance = self.target_distance
 
 
 
@@ -43,6 +48,7 @@ class FiniteStateMachine(object):
 		if self.status == 'FaceWall':
 			if self.finder.faceDone:
 				self.status = 'DistanceWall'
+				self.finder.faceDone = False
 			else:
 				self.finder.ranges = self.ranges
 				self.finder.odom = self.odom
@@ -55,7 +61,8 @@ class FiniteStateMachine(object):
 				self.twist.linear.x = 0
 				self.pub.publish(self.twist)
 				self.status = 'Rotate'
-				self.finder.faceDone = False
+				print 'here'
+				self.finder.distanceDone = False
 			else:
 				self.finder.ranges = self.ranges
 				self.finder.odom = self.odom
@@ -65,6 +72,7 @@ class FiniteStateMachine(object):
 		if self.status == 'Rotate':
 			if self.finder.faceDone:
 				self.status = 'FollowWall'
+				self.finder.faceDone = False
 			else:
 				self.finder.ranges = self.ranges
 				self.finder.odom = self.odom
@@ -72,6 +80,17 @@ class FiniteStateMachine(object):
 				self.twist.angular.z = self.finder.error * -.01
 				self.twist.linear.x = 0
 				self.pub.publish(self.twist)
+		if self.status == 'FollowWall':
+			self.follower.ranges = self.ranges
+			self.follower.odom = self.odom
+			self.follower.checkFacing()
+			if self.follower.ok == False:
+				self.status = 'Start'
+				print "start"
+			else:
+				self.twist.linear.x = .5
+				self.pub.publish(self.twist)
+
 
 
 
@@ -90,7 +109,6 @@ class WallFinder(FiniteStateMachine):
 		self.distanceDone = False
 		self.ranges = False
 		self.odom = False
-		self.target_distance = .5
 		self.faceDone = False
 
 	def findWall(self, orient):
@@ -110,7 +128,8 @@ class WallFinder(FiniteStateMachine):
 
 	def gotoWall(self):
 		self.error = self.ranges[0] - self.target_distance
-		if self.error < self.distancetolerance:
+		if abs(self.error) < self.distancetolerance:
+			print 'set to true'
 			self.distanceDone = True
 
 
@@ -135,8 +154,33 @@ class WallFinder(FiniteStateMachine):
 
 class WallFollower(FiniteStateMachine):
 	def __init__(self):
-		# rospy.init_node('wallfinder')
-		pass
+		self.ranges = False
+		self.ok = True
+		self.follow_error = .25
+
+	def checkFacing(self):
+		x = self.ranges[90]
+		y_forward = list(self.ranges)[70:90]
+		y_forward = filter(lambda a: a!=0, y_forward)
+		y_mean_forward = sum(y_forward)/len(y_forward)
+		y_backward = list(self.ranges)[90:110]
+		y_backward = filter(lambda a: a!=0, y_backward)
+		y_mean_backward = sum(y_backward)/len(y_backward)
+
+
+		forward_error = abs(y_mean_forward- abs(self.target_distance/math.cos(10)))
+		backward_error = abs(y_mean_backward- abs(self.target_distance/math.cos(10)))
+
+
+		print forward_error
+		print backward_error
+
+		if forward_error > self.follow_error or backward_error > self.follow_error:
+			self.ok = False
+		else:
+			self.ok = True
+
+
 		# if (x >= self.target_min and x <= self.target_max):
 		# 	print "following"
 		# 	self.ang_error = y_backward - y_forward
@@ -148,7 +192,6 @@ class WallFollower(FiniteStateMachine):
 		# y_forward = self.ranges[45]
 		
 
-		
 		
 
 
