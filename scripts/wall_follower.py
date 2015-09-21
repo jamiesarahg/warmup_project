@@ -9,7 +9,7 @@ import math
 from tf.transformations import euler_from_quaternion
 
 class FiniteStateMachine(object):
-	def __init__(self):
+	def __init__(self, mode):
 		rospy.init_node('wallfollower')
 		
 		rospy.Subscriber("/scan", LaserScan, self.scanCallback)
@@ -26,6 +26,8 @@ class FiniteStateMachine(object):
 		self.status = 'Start'
 		self.finder = WallFinder()
 		self.follower = WallFollower()
+		self.person = PersonFollower()
+		self.obstacle = ObstacleAvoider()
 
 		self.angletolerance = 1
 		self.finder.angletolerance = self.angletolerance
@@ -38,6 +40,8 @@ class FiniteStateMachine(object):
 		self.finder.target_distance = self.target_distance
 		self.follower.target_distance = self.target_distance
 
+		self.mode = mode
+
 
 
 	def run(self):
@@ -45,57 +49,68 @@ class FiniteStateMachine(object):
 		if self.status == 'Start':
 			if self.odom and self.ranges:
 				self.status = 'FaceWall'
-		if self.status == 'FaceWall':
-			if self.finder.faceDone:
-				self.status = 'DistanceWall'
-				self.finder.faceDone = False
 			else:
-				self.finder.ranges = self.ranges
-				self.finder.odom = self.odom
-				self.finder.findWall(0)
-				self.twist.angular.z = self.finder.error * -.01
-				self.twist.linear.x = 0
-				self.pub.publish(self.twist)
-		if self.status == 'DistanceWall':
-			if self.finder.distanceDone:
-				self.twist.linear.x = 0
-				self.pub.publish(self.twist)
-				self.status = 'Rotate'
-				print 'here'
-				self.finder.distanceDone = False
-			else:
-				self.finder.ranges = self.ranges
-				self.finder.odom = self.odom
-				self.finder.gotoWall()
-				self.twist.linear.x = self.finder.error
-				self.pub.publish(self.twist)
-		if self.status == 'Rotate':
-			if self.finder.faceDone:
-				self.status = 'FollowWall'
-				self.finder.faceDone = False
-			else:
-				self.finder.ranges = self.ranges
-				self.finder.odom = self.odom
-				self.finder.findWall(90)
-				self.twist.angular.z = self.finder.error * -.01
-				self.twist.linear.x = 0
-				self.pub.publish(self.twist)
-		if self.status == 'FollowWall':
-			self.follower.ranges = self.ranges
-			self.follower.odom = self.odom
-			self.follower.checkFacing()
-			if self.follower.ok == False:
-				self.status = 'Start'
-				print "start"
-			else:
-				self.follower.distanceCorrection()
-				self.twist.angular.z = .5 * self.follower.follow_error
-				self.twist.linear.x = .3
-				self.pub.publish(self.twist)
+				return
+		if self.mode == 'WallFollower':
+			if self.status == 'FaceWall':
+				if self.finder.faceDone:
+					self.status = 'DistanceWall'
+					self.finder.faceDone = False
+				else:
+					# self.finder.ranges = self.ranges
+					# self.finder.odom = self.odom
+					self.finder.findWall(0, self.ranges, self.odom)
+					self.twist.angular.z = self.finder.error * -.01
+					self.twist.linear.x = 0
+					self.pub.publish(self.twist)
+			if self.status == 'DistanceWall':
+				if self.finder.distanceDone:
+					self.twist.linear.x = 0
+					self.pub.publish(self.twist)
+					self.status = 'Rotate'
+					self.finder.distanceDone = False
+				else:
+					# self.finder.ranges = self.ranges
+					# self.finder.odom = self.odom
+					self.finder.gotoWall(self.ranges)
+					self.twist.linear.x = self.finder.error
+					self.pub.publish(self.twist)
+			if self.status == 'Rotate':
+				if self.finder.faceDone:
+					self.status = 'FollowWall'
+					self.finder.faceDone = False
+				else:
+					# self.finder.ranges = self.ranges
+					# self.finder.odom = self.odom
+					self.finder.findWall(90)
+					self.twist.angular.z = self.finder.error * -.01
+					self.twist.linear.x = 0
+					self.pub.publish(self.twist)
+			if self.status == 'FollowWall':
+				# self.follower.ranges = self.ranges
+				# self.follower.odom = self.odom
+				self.follower.checkFacing(self.ranges)
+				if self.follower.ok == False:
+					self.status = 'Start'
+					print "start"
+				else:
+					self.follower.distanceCorrection(self.ranges)
+					self.twist.angular.z = .5 * self.follower.follow_error
+					self.twist.linear.x = .3
+					self.pub.publish(self.twist)
+		if self.mode == "PersonFollower":
+			# self.finder.ranges = self.ranges
+			# self.finder.odom = self.odom
+			CoM, distance_away = self.person.calculateCenterOfMass(self.ranges)
 
+			print CoM
+			print distance_away
+			self.twist.angular.z = CoM * .02
+			self.twist.linear.x = distance_away * .1
+			self.pub.publish(self.twist)
 
-
-
+		if self.mode == "ObstacleAvoidance":
+			self.obstacle.returnHome(self.odom)
 
 	def scanCallback(self, data):
 		self.ranges = data.ranges
@@ -106,36 +121,35 @@ class FiniteStateMachine(object):
 		angles = euler_from_quaternion(orientation_tuple)
 		self.odom = shortcut.position.x, shortcut.position.y, angles[2]
 
-class WallFinder(FiniteStateMachine):
+class WallFinder(object):
 	def __init__(self):
 		self.distanceDone = False
-		self.ranges = False
+		# self.ranges = False
 		self.odom = False
 		self.faceDone = False
 
-	def findWall(self, orient):
-		try: minimum_distance = min(filter(lambda a: a!=0, self.ranges))
+	def findWall(self, orient, ranges, odom):
+		try: minimum_distance = min(filter(lambda a: a!=0, ranges))
 		except ValueError:
 			return
 		print "min dist ", minimum_distance
-		print "odom ", self.odom[2]
-		ind = self.ranges.index(minimum_distance)
+		print "odom ", odom[2]
+		ind = ranges.index(minimum_distance)
 		print "ind - orient ", ind-orient
-		self.error = self.angle_diff(self.odom[2], ind-orient) 
+		self.error = self.angle_diff(odom[2], ind-orient) 
 		print "error", self.error
 		if abs(self.error)> self.angletolerance:
-			self.error = self.angle_diff(self.odom[2], ind-orient)
+			self.error = self.angle_diff(odom[2], ind-orient)
 		else:
 			self.faceDone = True
 
-	def gotoWall(self):
-		print "range",self.ranges[0]
+	def gotoWall(self, ranges):
+		print "range", ranges[0]
 		print "target",self.target_distance
-		self.error = self.ranges[0] - self.target_distance
+		self.error = ranges[0] - self.target_distance
 		if abs(self.error) < self.distancetolerance:
 			print 'set to true'
 			self.distanceDone = True
-
 
 	def angle_diff(self, a, b):
 		""" Calculates the difference between angle a and angle b (both should be in radians)
@@ -156,20 +170,20 @@ class WallFinder(FiniteStateMachine):
 			return d2
 
 
-class WallFollower(FiniteStateMachine):
+class WallFollower(object):
 	def __init__(self):
-		self.ranges = False
+		# self.ranges = False
 		self.ok = True
 		self.follow_tolerance = 3
 		self.follow_error = False
 
 
-	def checkFacing(self):
-		x = self.ranges[90]
-		y_forward = list(self.ranges)[70:90]
+	def checkFacing(self, ranges):
+		x = ranges[90]
+		y_forward = list(ranges)[70:90]
 		y_forward = filter(lambda a: a!=0, y_forward)
 		y_mean_forward = sum(y_forward)/len(y_forward)
-		y_backward = list(self.ranges)[90:110]
+		y_backward = list(ranges)[90:110]
 		y_backward = filter(lambda a: a!=0, y_backward)
 		y_mean_backward = sum(y_backward)/len(y_backward)
 
@@ -186,20 +200,60 @@ class WallFollower(FiniteStateMachine):
 		else:
 			self.ok = True
 
-	def distanceCorrection(self):
-		# y = list(self.ranges)[70:110]
+	def distanceCorrection(self, ranges):
 
-		# y = filter(lambda a: a!=0, y)
-		# y_mean = sum(y)/len(y)
-
-		self.follow_error = self.ranges[90] - self.target_distance
+		self.follow_error = ranges[90] - self.target_distance
 		print "90 error", self.follow_error
+
+
+class PersonFollower(object):
+	"""docstring for PersonFollower"""
+	def __init__(self):
+		# self.CoM, self.distance_away = calculateCenterOfMass()
+		pass
+
+	def calculateCenterOfMass(self, ranges):
+		ranges = list(ranges)
+
+		view = ranges[300:360] + ranges[0:60]
+		indices = []
+		for index, reading in enumerate(view):
+			if reading > 0 and reading < 1.5:
+				indices.append(index)
+		try:
+			CoM = sum(indices)/len(indices)
+		except:
+			return (0, 0)
+
+		CoM = int((CoM - 60))
+		CoM_distances = []
+		for i in range(5):
+			if ranges[CoM -i] > 0:
+				CoM_distances.append(ranges[CoM - i])
+			if ranges[CoM + i] >0:
+				CoM_distances.append(ranges[CoM + i])
+
+		try: 
+			avg_distance = sum(CoM_distances)/len(CoM_distances)
+		except:
+			return(CoM, 0)
+
+
+		return CoM, avg_distance
+
+class ObstacleAvoidance(object):
+	def __init__(self):
+		pass
+
+	def returnHome(self, odom):
+
+		
 
 			
 
 
 if __name__ == '__main__':
-	run = FiniteStateMachine()
+	run = FiniteStateMachine("PersonFollower")
 	r = rospy.Rate(5)
 	while not rospy.is_shutdown():
 		run.run()
