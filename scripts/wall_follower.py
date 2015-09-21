@@ -27,11 +27,11 @@ class FiniteStateMachine(object):
 		self.finder = WallFinder()
 		self.follower = WallFollower()
 
-		self.angletolerance = 2
+		self.angletolerance = 1
 		self.finder.angletolerance = self.angletolerance
 		self.follower.angletolerance = self.angletolerance
 	
-		self.distancetolerance = .1
+		self.distancetolerance = .05
 		self.finder.distancetolerance = self.distancetolerance
 
 		self.target_distance = .5
@@ -88,7 +88,9 @@ class FiniteStateMachine(object):
 				self.status = 'Start'
 				print "start"
 			else:
-				self.twist.linear.x = .5
+				self.follower.distanceCorrection()
+				self.twist.angular.z = .5 * self.follower.follow_error
+				self.twist.linear.x = .3
 				self.pub.publish(self.twist)
 
 
@@ -127,6 +129,8 @@ class WallFinder(FiniteStateMachine):
 			self.faceDone = True
 
 	def gotoWall(self):
+		print "range",self.ranges[0]
+		print "target",self.target_distance
 		self.error = self.ranges[0] - self.target_distance
 		if abs(self.error) < self.distancetolerance:
 			print 'set to true'
@@ -156,7 +160,9 @@ class WallFollower(FiniteStateMachine):
 	def __init__(self):
 		self.ranges = False
 		self.ok = True
-		self.follow_error = .25
+		self.follow_tolerance = 3
+		self.follow_error = False
+
 
 	def checkFacing(self):
 		x = self.ranges[90]
@@ -168,31 +174,28 @@ class WallFollower(FiniteStateMachine):
 		y_mean_backward = sum(y_backward)/len(y_backward)
 
 
-		forward_error = abs(y_mean_forward- abs(self.target_distance/math.cos(10)))
-		backward_error = abs(y_mean_backward- abs(self.target_distance/math.cos(10)))
+		forward_error = abs(abs(self.target_distance/math.cos(10)) - y_mean_forward)
+		backward_error = abs(abs(self.target_distance/math.cos(10)) - y_mean_forward)
 
 
-		print forward_error
-		print backward_error
+		print "forward error", forward_error
+		print "backward error", backward_error
 
-		if forward_error > self.follow_error or backward_error > self.follow_error:
+		if forward_error > self.follow_tolerance or backward_error > self.follow_tolerance:
 			self.ok = False
 		else:
 			self.ok = True
 
+	def distanceCorrection(self):
+		# y = list(self.ranges)[70:110]
 
-		# if (x >= self.target_min and x <= self.target_max):
-		# 	print "following"
-		# 	self.ang_error = y_backward - y_forward
-		# 	self.twist.angular.z = self.gain*self.ang_error
-		# else:
-			# y_backward = self.ranges[135]
+		# y = filter(lambda a: a!=0, y)
+		# y_mean = sum(y)/len(y)
 
-		# 	x = self.ranges[90]
-		# y_forward = self.ranges[45]
-		
+		self.follow_error = self.ranges[90] - self.target_distance
+		print "90 error", self.follow_error
 
-		
+			
 
 
 if __name__ == '__main__':
@@ -201,24 +204,3 @@ if __name__ == '__main__':
 	while not rospy.is_shutdown():
 		run.run()
 		r.sleep()
-
-
-
-		# self.lin_error = 0
-		# self.ang_error = 0
-		# self.gain = 1
-		# self.target_distance = 1
-		# self.allowed_error = .2
-		# self.target_max = self.target_distance + self.allowed_error
-		# self.target_min = self.target_distance - self.allowed_error
-		# self.angle_distance = self.target_distance * math.sqrt(2)
-		# self.twist = Twist()
-		# self.scan = LaserScan()
-		
-
-		# rospy.Subscriber("/scan", LaserScan, self.scanCallback)
-		# rospy.Subscriber("/odom", Odometry, self.odomCallback)
-		# print "subscribed"
-
-
-		# self.pub = rospy.Publisher('cmd_vel', Twist, queue_size=10)
