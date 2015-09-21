@@ -110,7 +110,10 @@ class FiniteStateMachine(object):
 			self.pub.publish(self.twist)
 
 		if self.mode == "ObstacleAvoidance":
-			self.obstacle.returnHome(self.odom)
+			twist_to_home, distance_away = self.obstacle.returnHome(self.odom)
+			self.twist.linear.x = distance_away * .2
+			self.twist.angular.z = twist_to_home * .7
+			self.pub.publish(self.twist)
 
 	def scanCallback(self, data):
 		self.ranges = data.ranges
@@ -241,19 +244,52 @@ class PersonFollower(object):
 
 		return CoM, avg_distance
 
-class ObstacleAvoidance(object):
+class ObstacleAvoider(object):
 	def __init__(self):
 		pass
+	
+	def angle_diff(self, a, b):
+		""" Calculates the difference between angle a and angle b (both should be in radians)
+		the difference is always based on the closest rotation from angle a to angle b
+		examples:
+		angle_diff(.1,.2) -> -.1
+		angle_diff(.1, 2*math.pi - .1) -> .2
+		angle_diff(.1, .2+2*math.pi) -> -.1
+		"""
+
+		d1 = a-b
+		d2 = 2*math.pi - math.fabs(d1)
+		if d1 > 0:
+			d2 *= -1.0
+		if math.fabs(d1) < math.fabs(d2):
+			return d1
+		else:
+			return d2
 
 	def returnHome(self, odom):
+		distance_away = math.sqrt(odom[0]**2 + odom[1]**2)
+		angle_away = math.atan(odom[1]/odom[0])
+		odom_in_degrees = odom[2]
+		if odom[0]>= 0:
+			twist_to_home = -self.angle_diff(odom_in_degrees+math.pi,angle_away)
+		else:
+			twist_to_home = -self.angle_diff(odom_in_degrees,angle_away)
 
-		
+		print "odom0", odom[0]
+		print "odom1", odom[1]
+		print "odom2", odom[2]
+		print "angle_away", angle_away
+		print "odom in degrees", odom_in_degrees
+		print -twist_to_home
+		return (twist_to_home), distance_away
+
+
 
 			
 
 
 if __name__ == '__main__':
-	run = FiniteStateMachine("PersonFollower")
+	run = FiniteStateMachine("ObstacleAvoidance")
 	r = rospy.Rate(5)
 	while not rospy.is_shutdown():
 		run.run()
