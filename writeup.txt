@@ -1,2 +1,35 @@
-Wall Following:
-1. What is the "goal" of your controller?
+Warmup Project Writeup
+Jamie Gorson and Nicole Rifkin
+9/20/2015
+
+Which behaviors did you implement?
+We implemented a Wall follower, a person follower, and an obstacle avoider. Our wall follower uses a finite state controller. If it is too far from the wall (whether where it starts is too far or it errors too far off course), it goes into a wall finder. When the neato is the correct distance from the wall and correctly rotates, it returns to a wall follower.
+
+
+For each behavior, what strategy did you use to implement the behavior?
+For the wall follower, we used a finite state controller to make sure the neato was close enough to the wall. To get into the correct rotations and to the correct distance, we used proportional control. This calculated the error in the distance or angle from where the neato was supposed to be and then controlled the speed based off of the error. While wall following, the neato also used proportional control. The neato calculated how far it was from the wall by looking at the closest object ninety degrees to the left of it (exactly to its left, which was where the wall should be, since the neato was following a wall to its left) The neato used this information to twist into the correct direction.
+
+The person follower worked similarily to the wall finder. The person follower found the center of mass from the LIDAR readings from anything within three meters of it and in a -60 to 60 degree view. The center of mass was calculated by finding the average distance of any object within the specified space. It then used proportional control both in its speed and rotation to go to where the person was standing.
+
+The obstacle avoider had the mission to get 'home'. Home is the place where the neato first started. We used proportional control to define the rotation. We had to adjust the angle based on the direction that it was currently facing and the location compared to the 'home'. Then, we made a force field from all of the objects in a -60 to 60 degree view of the neato. The forces from the objects were the cos(angle from the neato)/(distance from neato)^2. We chose 1/x^2 because we wanted the objects closest to us to have an extremely high force and devalue the objects that were far away from us. We then summed the force from the object (going home) with the force field (with parameters as constants) to decide our orientation.
+
+
+For the finite state controller, what were the states?  What did the robot do in each state?  How did you combine and how did you detect when to transition between behaviors?
+In the finite state controller, the robot started in a wall finding mode. It would drive forwards until it found the closest wall, turn itself towards that wall, and position itself x distance away. Once we detected that we were the correct distance away from the wall (within a reasonable tolerance), the robot turned 90 degrees and began wall following. The changes in each of these states was determined by the proportional controller. If the error was low enough, the finite state machine would move on to the next state. During wall following it would dynamically adjust to maintain proper distance away from the wall. If it passed a threshold that indicated that it was too far away from the wall, it would return to its wall finding mode until it was able to wall follow again.
+
+
+How did you structure your code?
+Our code has a main finite state machine class and then a class for each capability (wall finder, wall follower, person follower & obstacle avoider). The FSM class has the subscribers and publishers and passes the inputs from the robot to the other classes. Next time, we would probably create one finite state machine class and a separate subscriber/publisher class. We would have put less code in the FSM class. There were a couple of functions that got reused such as the angle difference calculator, so in a much larger project we would consider have a utils class that other classes could inherit from.  
+
+
+What if any challenges did you face along the way?
+One of our stretch goals was to get the robot to go to a set coordinate in obstacle avoidance mode. We also wanted to implement the 'force field' model of avoiding obstacles. The robot can successfully 'go home' -- or back to wherever it was first turned on while mostly avoiding things that are in its way. The geometry and the odom coordinate system were especially challenging for us, and tuning the parameters for each force in the force field took more time than we had anticipated. However, we are both very happy with the outcome for both the force field and the 'go home' functionalities.  We ran into these same difficulties when initially working on the face wall. The math with the angles, odom and direction was a challenge for us.
+
+
+What would you do to improve your project if you had more time?
+We would love to be able to turn corners and avoid obstacles while wall following.
+It would also be great to spend more time making the code more modular. For example, our wall finding logic and our person following logic were very similar, but it would have been nice to create one generic method that worked in both modes.
+
+
+Did you learn any interesting lessons for future robotic programming projects?
+Geometry. There's a lot of it in robotics. It's been a long time since we were in the 9th grade. It took a lot of time on the white board really thinking about our problem space and the coordinate system to get obstacle avoidance working, but it also seems to be an extremely powerful tool to work with. We both feel much more comfortable controlling the robot and understand a bit more about its capabilities.
