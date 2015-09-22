@@ -29,7 +29,7 @@ class FiniteStateMachine(object):
 		self.person = PersonFollower()
 		self.obstacle = ObstacleAvoider()
 
-		self.angletolerance = 1
+		self.angletolerance = 2
 		self.finder.angletolerance = self.angletolerance
 		self.follower.angletolerance = self.angletolerance
 	
@@ -57,11 +57,13 @@ class FiniteStateMachine(object):
 					self.status = 'DistanceWall'
 					self.finder.faceDone = False
 				else:
-					# self.finder.ranges = self.ranges
-					# self.finder.odom = self.odom
-					self.finder.findWall(0, self.ranges, self.odom)
-					self.twist.angular.z = self.finder.error * -.01
-					self.twist.linear.x = 0
+					wall = self.finder.findWall(0, self.ranges, self.odom)
+					if wall:
+						self.twist.angular.z = self.finder.error * -.01
+						self.twist.linear.x = 0
+					else: 
+						self.twist.linear.x = .2
+						self.twist.angular.z = 0
 					self.pub.publish(self.twist)
 			if self.status == 'DistanceWall':
 				if self.finder.distanceDone:
@@ -70,8 +72,7 @@ class FiniteStateMachine(object):
 					self.status = 'Rotate'
 					self.finder.distanceDone = False
 				else:
-					# self.finder.ranges = self.ranges
-					# self.finder.odom = self.odom
+
 					self.finder.gotoWall(self.ranges)
 					self.twist.linear.x = self.finder.error
 					self.pub.publish(self.twist)
@@ -80,17 +81,18 @@ class FiniteStateMachine(object):
 					self.status = 'FollowWall'
 					self.finder.faceDone = False
 				else:
-					# self.finder.ranges = self.ranges
-					# self.finder.odom = self.odom
-					self.finder.findWall(90)
+					self.finder.findWall(90, self.ranges, self.odom)
 					self.twist.angular.z = self.finder.error * -.01
 					self.twist.linear.x = 0
 					self.pub.publish(self.twist)
 			if self.status == 'FollowWall':
-				# self.follower.ranges = self.ranges
-				# self.follower.odom = self.odom
+				if self.ranges[270] < 1 and self.ranges[270]>0:
+					self.twist.angular.z = -.01
+					self.twist.linear.x = 0
+					rospy.sleep(5)
+					self.mode = "PersonFollower"
 				self.follower.checkFacing(self.ranges)
-				if self.follower.ok == False:
+				if self.follower.ok == False: 
 					self.status = 'Start'
 					print "start"
 				else:
@@ -99,12 +101,10 @@ class FiniteStateMachine(object):
 					self.twist.linear.x = .3
 					self.pub.publish(self.twist)
 		if self.mode == "PersonFollower":
-			# self.finder.ranges = self.ranges
-			# self.finder.odom = self.odom
 			CoM, distance_away = self.person.calculateCenterOfMass(self.ranges)
-
-			print CoM
-			print distance_away
+			if CoM== 0 and distance_away == 0 :
+				self.mode = "WallFollower"
+				return
 			self.twist.angular.z = CoM * .02
 			self.twist.linear.x = distance_away * .1
 			self.pub.publish(self.twist)
@@ -130,14 +130,16 @@ class FiniteStateMachine(object):
 class WallFinder(object):
 	def __init__(self):
 		self.distanceDone = False
-		# self.ranges = False
 		self.odom = False
 		self.faceDone = False
 
 	def findWall(self, orient, ranges, odom):
+		print ranges
 		try: minimum_distance = min(filter(lambda a: a!=0, ranges))
 		except ValueError:
-			return
+			return False
+		if minimum_distance > 1:
+			return False
 		print "min dist ", minimum_distance
 		print "odom ", odom[2]
 		ind = ranges.index(minimum_distance)
@@ -148,6 +150,7 @@ class WallFinder(object):
 			self.error = self.angle_diff(odom[2], ind-orient)
 		else:
 			self.faceDone = True
+		return True
 
 	def gotoWall(self, ranges):
 		print "range", ranges[0]
@@ -178,7 +181,6 @@ class WallFinder(object):
 
 class WallFollower(object):
 	def __init__(self):
-		# self.ranges = False
 		self.ok = True
 		self.follow_tolerance = 3
 		self.follow_error = False
@@ -215,7 +217,6 @@ class WallFollower(object):
 class PersonFollower(object):
 	"""docstring for PersonFollower"""
 	def __init__(self):
-		# self.CoM, self.distance_away = calculateCenterOfMass()
 		pass
 
 	def calculateCenterOfMass(self, ranges):
@@ -300,13 +301,8 @@ class ObstacleAvoider(object):
 
 
 
-
-
-			
-
-
 if __name__ == '__main__':
-	run = FiniteStateMachine("ObstacleAvoidance")
+	run = FiniteStateMachine("WallFollower")
 	r = rospy.Rate(5)
 	while not rospy.is_shutdown():
 		run.run()
