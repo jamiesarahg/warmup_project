@@ -112,7 +112,10 @@ class FiniteStateMachine(object):
 		if self.mode == "ObstacleAvoidance":
 			twist_to_home, distance_away = self.obstacle.returnHome(self.odom)
 			self.twist.linear.x = distance_away * .2
-			self.twist.angular.z = twist_to_home * .7
+	
+			total_force = self.obstacle.seeObstacle(self.ranges)
+			self.twist.linear.x = .1
+			self.twist.angular.z = -.03*total_force + twist_to_home * .7
 			self.pub.publish(self.twist)
 
 	def scanCallback(self, data):
@@ -217,7 +220,6 @@ class PersonFollower(object):
 
 	def calculateCenterOfMass(self, ranges):
 		ranges = list(ranges)
-
 		view = ranges[300:360] + ranges[0:60]
 		indices = []
 		for index, reading in enumerate(view):
@@ -275,13 +277,28 @@ class ObstacleAvoider(object):
 		else:
 			twist_to_home = -self.angle_diff(odom_in_degrees,angle_away)
 
-		print "odom0", odom[0]
-		print "odom1", odom[1]
-		print "odom2", odom[2]
-		print "angle_away", angle_away
-		print "odom in degrees", odom_in_degrees
-		print -twist_to_home
+
 		return (twist_to_home), distance_away
+
+	def seeObstacle(self, ranges):
+		ranges = list(ranges)
+		pos_half = ranges[0:60]
+		neg_half = ranges[300:360]
+
+		total_force = 0
+
+		for i in range(len(pos_half)):
+			if pos_half[i] > 0:
+				total_force = total_force + (math.cos(i*math.pi/180))/pos_half[i]**2
+		print total_force
+		for i in range(len(neg_half)):
+			if neg_half[i] > 0:
+				total_force = total_force - (math.cos((i+270)*math.pi/180))/neg_half[i]**2
+		print total_force
+		return total_force
+
+
+
 
 
 
