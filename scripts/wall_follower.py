@@ -86,11 +86,6 @@ class FiniteStateMachine(object):
 					self.twist.linear.x = 0
 					self.pub.publish(self.twist)
 			if self.status == 'FollowWall':
-				if self.ranges[270] < 1 and self.ranges[270]>0:
-					self.twist.angular.z = -.01
-					self.twist.linear.x = 0
-					rospy.sleep(5)
-					self.mode = "PersonFollower"
 				self.follower.checkFacing(self.ranges)
 				if self.follower.ok == False: 
 					self.status = 'Start'
